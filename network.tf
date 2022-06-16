@@ -14,6 +14,13 @@ resource "azurerm_subnet" "week5subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
+resource "azurerm_subnet" "week5PrivateSubnet" {
+  name                 = "myPrivateSubnet"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.week5network.name
+  address_prefixes     = ["10.0.2.0/24"]
+}
+
 # Create public IP for Load Balancer
 resource "azurerm_public_ip" "loadbalancerIP" {
    name                         = "publicIPForLB"
@@ -79,9 +86,21 @@ resource "azurerm_network_interface" "week5NIC" {
    }
  }
 
+ resource "azurerm_network_interface" "week5DBNIC" {
+   name                = "dbNIC"
+   location            = azurerm_resource_group.rg.location
+   resource_group_name = azurerm_resource_group.rg.name
+      ip_configuration {
+     name                          = "mainConfiguration"
+     subnet_id                     = azurerm_subnet.week5PrivateSubnet.id
+     private_ip_address_allocation = "Dynamic"
+   }
+ }
+
 # Create Network Security Group and rule
-resource "azurerm_network_security_group" "week5nsg" {
-  name                = "myNetworkSecurityGroup"
+
+resource "azurerm_network_security_group" "Public_nsg" {
+  name                = "myPublic_SecurityGroup"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
@@ -91,7 +110,7 @@ resource "azurerm_network_security_group" "week5nsg" {
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_port_range          = "*"
+    source_port_range          = "22"
     destination_port_range     = "22"
     source_address_prefix      = "*"
     destination_address_prefix = "*"
@@ -102,16 +121,50 @@ resource "azurerm_network_security_group" "week5nsg" {
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_port_range          = "*"
+    source_port_range          = "8080"
     destination_port_range     = "8080"
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
 }
+resource "azurerm_network_security_group" "Private_nsg" {
+  name                = "myDB_SecurityGroup"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
 
-# Connect the security group to the network interface
-resource "azurerm_network_interface_security_group_association" "example" {
+  security_rule {
+    name                       = "SSH"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "22"
+    destination_port_range     = "22"
+    source_address_prefix      = "10.0.1.0/24"
+    destination_address_prefix = "*"
+  }
+  security_rule {
+    name                       = "postgre"
+    priority                   = 1002
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "5432"
+    destination_port_range     = "5432"
+    source_address_prefix      = "10.0.1.0/24"
+    destination_address_prefix = "*"
+  }
+}
+
+# Connect the public security group to the appVMs network interfaces
+resource "azurerm_network_interface_security_group_association" "public_assoc" {
   count = "${var.vmcount}"
   network_interface_id      = azurerm_network_interface.week5NIC[count.index].id
-  network_security_group_id = azurerm_network_security_group.week5nsg.id
+  network_security_group_id = azurerm_network_security_group.Public_nsg.id
+}
+
+# Connect the private security group to the dbVM network interface
+resource "azurerm_network_interface_security_group_association" "private_assoc" {
+  network_interface_id      = azurerm_network_interface.week5DBNIC.id
+  network_security_group_id = azurerm_network_security_group.Private_nsg.id
 }

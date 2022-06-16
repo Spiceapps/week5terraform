@@ -45,6 +45,35 @@ source_image_reference {
     disable_password_authentication = false
 }
 
+ resource "azurerm_linux_virtual_machine" "myDB" {
+   name                  = "DBvm"
+   location              = azurerm_resource_group.rg.location
+   availability_set_id   = azurerm_availability_set.avset.id
+   resource_group_name   = azurerm_resource_group.rg.name
+   network_interface_ids  = [azurerm_network_interface.week5DBNIC.id]
+   size                  = "Standard_B1s"
+
+   # Uncomment this line to delete the OS disk automatically when deleting the VM
+   # delete_os_disk_on_termination = true
+
+   # Uncomment this line to delete the data disks automatically when deleting the VM
+   # delete_data_disks_on_termination = true
+source_image_reference {
+     publisher = "Canonical"
+     offer     = "0001-com-ubuntu-server-focal"
+     sku       = "20_04-lts-gen2"
+     version   = "latest"
+   }
+
+   os_disk {
+     name              = "myosdisk"
+     caching           = "ReadWrite"
+     storage_account_type = "Premium_LRS"
+   }
+    admin_username = "azureadmin"
+    admin_password = random_password.password.result
+    disable_password_authentication = false
+}
 #Generate random password
 resource "random_password" "password" {
   length = 16
