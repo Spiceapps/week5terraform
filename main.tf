@@ -1,137 +1,53 @@
 resource "random_pet" "rg-name" {
   prefix    = var.resource_group_name_prefix
 }
-
 resource "azurerm_resource_group" "rg" {
   name      = random_pet.rg-name.id
   location  = var.resource_group_location
 }
-# Create virtual network
-resource "azurerm_virtual_network" "week5network" {
-  name                = "myVnet"
-  address_space       = ["10.0.0.0/16"]
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+ resource "azurerm_availability_set" "avset" {
+   name                         = "avset"
+   location                     = azurerm_resource_group.rg.location
+   resource_group_name          = azurerm_resource_group.rg.name
+   platform_fault_domain_count  = 2
+   platform_update_domain_count = 2
+   managed                      = true
+ }
+
+ resource "azurerm_linux_virtual_machine" "myvms" {
+   count                 = "${var.vmcount}"
+   name                  = "acctvm${count.index}"
+   location              = azurerm_resource_group.rg.location
+   availability_set_id   = azurerm_availability_set.avset.id
+   resource_group_name   = azurerm_resource_group.rg.name
+   network_interface_ids = [element(azurerm_network_interface.week5NIC.*.id, count.index)]
+   size                  = "Standard_B1s"
+
+   # Uncomment this line to delete the OS disk automatically when deleting the VM
+   # delete_os_disk_on_termination = true
+
+   # Uncomment this line to delete the data disks automatically when deleting the VM
+   # delete_data_disks_on_termination = true
+source_image_reference {
+     publisher = "Canonical"
+     offer     = "0001-com-ubuntu-server-focal"
+     sku       = "20_04-lts-gen2"
+     version   = "latest"
+   }
+
+   os_disk {
+     name              = "myosdisk${count.index}"
+     caching           = "ReadWrite"
+     storage_account_type = "Premium_LRS"
+   }
+      admin_username = "azureadmin"
+    admin_password = random_password.password.result
+    disable_password_authentication = false
 }
 
-# Create subnet
-resource "azurerm_subnet" "week5subnet" {
-  name                 = "mySubnet"
-  resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.week5network.name
-  address_prefixes     = ["10.0.1.0/24"]
-}
-
-# Create public IPs
-resource "azurerm_public_ip" "week5publicip" {
-  name                = "myPublicIP"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  allocation_method   = "Dynamic"
-}
-
-# Create Network Security Group and rule
-resource "azurerm_network_security_group" "week5nsg" {
-  name                = "myNetworkSecurityGroup"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  security_rule {
-    name                       = "SSH"
-    priority                   = 1001
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-  security_rule {
-    name                       = "webapp"
-    priority                   = 1002
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "8080"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-}
-
-# Create network interface
-resource "azurerm_network_interface" "myterraformnic" {
-  name                = "myNIC"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  ip_configuration {
-    name                          = "myNicConfiguration"
-    subnet_id                     = azurerm_subnet.week5subnet.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.week5publicip.id
-  }
-}
-
-# Connect the security group to the network interface
-resource "azurerm_network_interface_security_group_association" "example" {
-  network_interface_id      = azurerm_network_interface.myterraformnic.id
-  network_security_group_id = azurerm_network_security_group.week5nsg.id
-}
-
-# Generate random text for a unique storage account name
-resource "random_id" "randomId" {
-  keepers = {
-    # Generate a new ID only when a new resource group is defined
-    resource_group = azurerm_resource_group.rg.name
-  }
-
-  byte_length = 8
-}
-
-# Create storage account for boot diagnostics
-resource "azurerm_storage_account" "mystorageaccount" {
-  name                     = "diag${random_id.randomId.hex}"
-  location                 = azurerm_resource_group.rg.location
-  resource_group_name      = azurerm_resource_group.rg.name
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-}
 #Generate random password
 resource "random_password" "password" {
   length = 16
   special = true
   override_special = "_%@"
-}
-
-# Create virtual machine
-resource "azurerm_linux_virtual_machine" "myterraformvm" {
-  name                  = "myVM"
-  location              = azurerm_resource_group.rg.location
-  resource_group_name   = azurerm_resource_group.rg.name
-  network_interface_ids = [azurerm_network_interface.myterraformnic.id]
-  size                  = "Standard_B1s"
-
-  os_disk {
-    name                 = "myOsDisk"
-    caching              = "ReadWrite"
-    storage_account_type = "Premium_LRS"
-  }
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "UbuntuServer"
-    sku       = "19.04"
-    version   = "latest"
-  }
-
-  computer_name                   = "myvm"
-  admin_username                  = "azureuser"
-  admin_password                  = random_password.password.result
-  disable_password_authentication = false
-
-  boot_diagnostics {
-    storage_account_uri = azurerm_storage_account.mystorageaccount.primary_blob_endpoint
-  }
 }
