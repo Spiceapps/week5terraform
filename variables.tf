@@ -12,3 +12,8 @@ variable "vmcount" {
   type = number
   default = 3  
 }
+
+variable "AllowedIPforRemoteSSH" {
+  type = string
+  default = "84.228.18.103"
+}

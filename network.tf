@@ -45,31 +45,40 @@ resource "azurerm_lb_backend_address_pool" "lb_backendPool" {
    name                = "BackEndAddressPool"
  }
 
-#Configure Load Balancer NAT Rules
-resource "azurerm_lb_nat_rule" "sshrule" {
-  resource_group_name            = azurerm_resource_group.rg.name
+
+#Configure Load Balancer rules
+resource "azurerm_lb_rule" "sshAccessRule" {
   loadbalancer_id                = azurerm_lb.week5LB.id
-  name                           = "SSHAccess"
+  name                           = "LBRuleSSH"
   protocol                       = "Tcp"
   frontend_port                  = 22
   backend_port                   = 22
   frontend_ip_configuration_name = azurerm_lb.week5LB.frontend_ip_configuration[0].name
+  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.lb_backendPool.id]
+  probe_id                       = azurerm_lb_probe.sshProbe.id
 }
 
-resource "azurerm_lb_nat_rule" "webapprule" {
-  resource_group_name            = azurerm_resource_group.rg.name
+resource "azurerm_lb_rule" "webappAccessRule" {
   loadbalancer_id                = azurerm_lb.week5LB.id
-  name                           = "WebappAccess"
+  name                           = "LBRuleWebApp"
   protocol                       = "Tcp"
   frontend_port                  = 8080
   backend_port                   = 8080
   frontend_ip_configuration_name = azurerm_lb.week5LB.frontend_ip_configuration[0].name
+  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.lb_backendPool.id]
+  probe_id                       = azurerm_lb_probe.sshProbe.id
 }
 
+#Configure Load Balancer Probe
+resource "azurerm_lb_probe" "sshProbe" {
+  loadbalancer_id = azurerm_lb.week5LB.id
+  name            = "ssh-running-probe"
+  port            = 22
+}
 resource "azurerm_network_interface_backend_address_pool_association" "example" {
   count                   = var.vmcount
   backend_address_pool_id = azurerm_lb_backend_address_pool.lb_backendPool.id
-  ip_configuration_name   = "primary"
+  ip_configuration_name   = "mainConfiguration"
   network_interface_id    = element(azurerm_network_interface.week5NIC.*.id, count.index)
 }
 
@@ -110,7 +119,8 @@ resource "azurerm_network_security_group" "Public_nsg" {
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_port_range          = "22"
+    source_address_prefixes    = var.AllowedIPforRemoteSSH
+    source_port_range          = "*"
     destination_port_range     = "22"
     source_address_prefix      = "*"
     destination_address_prefix = "*"
@@ -121,7 +131,7 @@ resource "azurerm_network_security_group" "Public_nsg" {
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_port_range          = "8080"
+    source_port_range          = "*"
     destination_port_range     = "8080"
     source_address_prefix      = "*"
     destination_address_prefix = "*"
@@ -166,5 +176,16 @@ resource "azurerm_network_interface_security_group_association" "public_assoc" {
 # Connect the private security group to the dbVM network interface
 resource "azurerm_network_interface_security_group_association" "private_assoc" {
   network_interface_id      = azurerm_network_interface.week5DBNIC.id
+  network_security_group_id = azurerm_network_security_group.Private_nsg.id
+}
+
+# Associate NSGs with Subnets
+resource "azurerm_subnet_network_security_group_association" "toPublicSubnet" {
+  subnet_id                 = azurerm_subnet.week5subnet.id
+  network_security_group_id = azurerm_network_security_group.Public_nsg.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "toPrivateSubnet" {
+  subnet_id                 = azurerm_subnet.week5PrivateSubnet.id
   network_security_group_id = azurerm_network_security_group.Private_nsg.id
 }
